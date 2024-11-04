@@ -594,7 +594,10 @@ class DeformSegmentationModule(SegmentationModuleBase):
                 pred_sampled[torch.isnan(pred_sampled)] = 0 # assign residual missing with 0 probability
                 loss = self.crit(pred_sampled, feed_dict['seg_label'])
             else:
+                #print(pred.shape)
+                #print(feed_dict['seg_label'].shape)
                 loss = self.crit(pred, feed_dict['seg_label'])
+                #print(loss)
             if self.deep_sup_scale is not None:
                 loss_deepsup = self.crit(pred_deepsup, feed_dict['seg_label'])
                 loss = loss + loss_deepsup * self.deep_sup_scale
