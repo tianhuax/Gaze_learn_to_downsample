@@ -1,3 +1,14 @@
+Conda environment setting:
+gaze_environment.yml
+
+Run command:
+python3 train_deform.py --gpus 0 --cfg config/deform-cityscape.yaml DATASET.root_dataset '/home/xth/Deformation-Segmentation/Deformation-Segmentation/data/cityscapes' TRAIN.task_input_size '(64,128)' TRAIN.num_epoch 10 TRAIN.eval_per_epoch 10 DIR "ckpt/Cityscape_Tin_64_128_ours_11_11" TRAIN.deform_joint_loss True
+
+Need to prepare the dataset structure (b_data_train/data_a_raw, etc.) the same as DynamicFocus and set the path in DynamicFocus/preset.py.
+Use the dataset and dataloader in DynamicFocus/e_preprocess_scripts/b5_preprocess_cityscapes_rgblabel_mask.py to online ramdom sample focus points
+
+Also need to prepare the data structure the same as Lear to Downsample shown below.
+
 # Learning to Downsample for Segmentation of Ultra-High Resolution Images in PyTorch
 
 This is a PyTorch implementation of [Learning to Downsample for Segmentation of Ultra-High Resolution Images](https://lxasqjc.github.io/learn-downsample.github.io/) which published at [ICLR 2022](https://openreview.net/forum?id=HndgQudNb91).
