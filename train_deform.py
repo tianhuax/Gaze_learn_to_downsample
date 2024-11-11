@@ -29,6 +29,7 @@ from pytorch_toolbelt.losses.dice import DiceLoss
 
 # import wandb
 
+from DynamicFocus.e_preprocess_scripts.b5_preprocess_cityscapes_rgblabel_mask import DataLoaderCityScapesRGBLabelMask, DatasetCityScapesRGBLabelMask
 
 
 # train one epoch
@@ -45,13 +46,17 @@ def train(segmentation_module, iterator, optimizers, epoch, cfg, history=None, f
     tic = time.time()
     for i in range(cfg.TRAIN.epoch_iters):
         # load a batch of data
-        batch_data = next(iterator)
-        if len(batch_data) == 1:
-            batch_data = batch_data[0]
+        data = next(iterator)
+        #if len(batch_data) == 1:
+        if True:
+            data = data[1]
+            X_Bx3xHSxWS, F_Bx2, Y_Bx1xHSxWS, Y_cls_Bx1 = data
+            #print(torch.unique(Y_Bx1xHSxWS))
             single_gpu_mode = True
             # print('single gpu mode ON \n')
-            batch_data['img_data'] = batch_data['img_data'].cuda()
-            batch_data['seg_label'] = batch_data['seg_label'].cuda()
+            #batch_data['img_data'] = batch_data['img_data'].cuda()
+            #batch_data['seg_label'] = batch_data['seg_label'].cuda()
+            batch_data = {'img_data': X_Bx3xHSxWS, 'seg_label': Y_Bx1xHSxWS[0], 'focus_point': F_Bx2}
             batch_data = [batch_data]
         else:
             single_gpu_mode = False
@@ -353,11 +358,11 @@ def main(cfg, gpus):
                                      weight=None)
     elif 'ADE20K' in cfg.DATASET.root_dataset:
         crit = nn.NLLLoss(ignore_index=-2)
-    elif 'CITYSCAPES' in cfg.DATASET.root_dataset:
+    elif 'CITYSCAPES' in cfg.DATASET.root_dataset or 'cityscape' in cfg.DATASET.root_dataset:
         if cfg.TRAIN.loss_fun == 'NLLLoss':
-            crit = nn.NLLLoss(ignore_index=19)
+            crit = nn.NLLLoss(ignore_index=0)
         elif cfg.TRAIN.loss_fun == 'DiceLoss':
-            crit = DiceLoss('multiclass', ignore_index=19)
+            crit = DiceLoss('multiclass', ignore_index=0)
         else:
             if cfg.TRAIN.loss_weight != []:
                 class_weights = torch.FloatTensor(list(cfg.TRAIN.loss_weight)).cuda()
@@ -375,10 +380,11 @@ def main(cfg, gpus):
             if cfg.DATASET.binary_class != -1:
                 class_weights = None
 
-            crit = OhemCrossEntropy(ignore_label=20,
+            crit = OhemCrossEntropy(ignore_label=0,
                                          thres=0.9,
                                          min_kept=131072,
-                                         weight=class_weights)
+                                         weight=None)
+            #                           weight=class_weights)
     elif 'DeepGlob' in cfg.DATASET.root_dataset and (cfg.TRAIN.loss_fun == 'FocalLoss' or cfg.TRAIN.loss_fun == 'OhemCrossEntropy'):
         if cfg.TRAIN.loss_fun == 'FocalLoss':
             crit = FocalLoss(gamma=6, ignore_label=cfg.DATASET.ignore_index)
@@ -510,15 +516,28 @@ def main(cfg, gpus):
         drop_last=True,
         pin_memory=True)
     print('1 Epoch = {} iters'.format(cfg.TRAIN.epoch_iters))
+
+    #Our dataloader
+    datasetCityscapes = DatasetCityScapesRGBLabelMask('sp0', dataset_partition='train')
+    loader_train = DataLoaderCityScapesRGBLabelMask(datasetCityscapes, cropH=1024, cropW=2048)
+
     # create loader iterator
-    iterator_train = iter(loader_train)
+    #iterator_train = iter(loader_train)
+    iterator_train = enumerate(loader_train.get_iterator(batch_size=1, device='cuda'))
+    
     initial_relative_eval_y_ysample_last = True
     relative_eval_y_ysample_last = None
+
+    
     ###============== MAIN LOOP ===========###
     for epoch in range(cfg.TRAIN.start_epoch, cfg.TRAIN.num_epoch):
         cfg.TRAIN.global_epoch = epoch+1
 
         if not cfg.TRAIN.skip_train_for_eval:
+            #Our dataloader
+            datasetCityscapes = DatasetCityScapesRGBLabelMask('sp0', dataset_partition='train')
+            loader_train = DataLoaderCityScapesRGBLabelMask(datasetCityscapes, cropH=1024, cropW=2048)
+            iterator_train = enumerate(loader_train.get_iterator(batch_size=1, device='cuda'))
 
             train(segmentation_module, iterator_train,
             optimizers, epoch+1, cfg, history, writer=writer)

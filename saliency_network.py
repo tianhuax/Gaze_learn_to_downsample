@@ -300,7 +300,7 @@ class ResNetZoom_nonsyn(nn.Module):
 
 
 class FovSimModule(nn.Module):
-    def __init__(self, cfg, in_channels=3, out_channels=3):
+    def __init__(self, cfg, in_channels=5, out_channels=3):
         # in_channels: num of channels corresponds to input image channels, e.g. 3
         # out_channels: num of channels corresponds to num of sclaes tested
         super(FovSimModule, self).__init__()
@@ -322,7 +322,7 @@ class FovSimModule(nn.Module):
         output = layer3
         return output
 
-def fov_simple(cfg, pretrained=False, in_channels=3, out_channels=24):
+def fov_simple(cfg, pretrained=False, in_channels=5, out_channels=24):
     """
     simple three layer CNN as used in foveation work
     """

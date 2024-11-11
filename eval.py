@@ -24,6 +24,7 @@ from scipy import ndimage
 from tqdm import tqdm
 
 from saliency_network import saliency_network_resnet18, saliency_network_resnet10_nonsyn, saliency_network_resnet18_nonsyn, fov_simple, saliency_network_resnet18_stride1
+from DynamicFocus.e_preprocess_scripts.b5_preprocess_cityscapes_rgblabel_mask import DataLoaderCityScapesRGBLabelMask, DatasetCityScapesRGBLabelMask
 
 colors = loadmat('data/color150.mat')['colors']
 
@@ -105,6 +106,7 @@ def evaluate(segmentation_module, loader, cfg, gpu, foveation_module=None, write
 
     pbar = tqdm(total=len(loader))
     feed_batch_count = 0
+    batch_data = {}
     for batch_data in loader:
         # print('feed_batch_count: {}\n'.format(feed_batch_count))
         if feed_batch_count == (len(loader)//cfg.TRAIN.num_gpus-1):
@@ -122,6 +124,9 @@ def evaluate(segmentation_module, loader, cfg, gpu, foveation_module=None, write
 
             batch_data[0]['info'] = info_list
 
+        X_Bx3xHSxWS, F_Bx2, Y_Bx1xHSxWS, Y_cls_Bx1 = batch_data[1]
+        data = {'img_data': [X_Bx3xHSxWS], 'focus_point': F_Bx2, 'seg_label': Y_Bx1xHSxWS[0], 'img_ori': (X_Bx3xHSxWS[0]*255).cpu().numpy().transpose((1, 2, 0)), 'info': 'image'+str(batch_data[0])+'.png', 'img_data_unnorm': [X_Bx3xHSxWS]}
+        batch_data = [data]
         batch_data = batch_data[0]
         if cfg.VAL.no_upsample:
             segm = Image.fromarray(as_numpy(batch_data['seg_label'][0]).astype('uint8'))
@@ -194,14 +199,14 @@ def evaluate(segmentation_module, loader, cfg, gpu, foveation_module=None, write
             acc_y_reverse, pix_y_reverse = accuracy(y_sampled_reverse, seg_label)
 
 
-        if 'CITYSCAPES' in cfg.DATASET.root_dataset or 'CITYSCAPE' in cfg.DATASET.list_train:
-            intersection, union, area_lab = intersectionAndUnion(pred, seg_label, cfg.DATASET.num_class, ignore_index=20-1)
+        if 'CITYSCAPES' in cfg.DATASET.root_dataset or 'CITYSCAPE' in cfg.DATASET.list_train or 'cityscape' in cfg.DATASET.root_dataset:
+            intersection, union, area_lab = intersectionAndUnion(pred, seg_label, cfg.DATASET.num_class, ignore_index=0)
             # print('pred_deformed shape: {}'.format(pred_deformed.shape))
             # print('y_sampled shape: {}'.format(y_sampled.shape))
-            intersection_deformed, union_deformed, area_lab_deformed = intersectionAndUnion(pred_deformed, y_sampled, cfg.DATASET.num_class, ignore_index=20-1)
+            intersection_deformed, union_deformed, area_lab_deformed = intersectionAndUnion(pred_deformed, y_sampled, cfg.DATASET.num_class, ignore_index=0)
             if cfg.VAL.y_sampled_reverse:
                 # assert (cfg.MODEL.rev_deform_interp == 'nearest'), "y_sampled_reverse only appliable to nearest rev_deform_interp"
-                intersection_y_reverse, union_y_reverse, area_lab_y_reverse = intersectionAndUnion(y_sampled_reverse, seg_label, cfg.DATASET.num_class, ignore_index=20-1)
+                intersection_y_reverse, union_y_reverse, area_lab_y_reverse = intersectionAndUnion(y_sampled_reverse, seg_label, cfg.DATASET.num_class, ignore_index=0)
         else:
             if cfg.DATASET.ignore_index != -2:
                 intersection, union, area_lab = intersectionAndUnion(pred, seg_label, cfg.DATASET.num_class, ignore_index=cfg.DATASET.ignore_index)
@@ -422,7 +427,10 @@ def eval_during_train_deform(cfg, writer=None, gpu=0, count=None):
         collate_fn=user_scattered_collate,
         num_workers=5,
         drop_last=True)
-
+    
+    datasetCityscapes = DatasetCityScapesRGBLabelMask('sp0', dataset_partition='valid')
+    loader_val = DataLoaderCityScapesRGBLabelMask(datasetCityscapes, cropH=1024, cropW=2048)
+    loader_val = list(enumerate(loader_val.get_iterator(batch_size=1, device='cuda')))
     segmentation_module.cuda()
 
     # Main loop

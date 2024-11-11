@@ -3,7 +3,7 @@ DATASET:
   list_train: "./data/Cityscape/training_list_2975.odgt"
   list_val: "./data/Cityscape/validation_list_500.odgt"
   grid_path: "./data/Cityscape/grid_1024_2048.png"
-  num_class: 20
+  num_class: 2
   imgSizes: (2048, )
   imgMaxSize: 2048
   padding_constant: 32

@@ -25,7 +25,7 @@ import cv2
 import torchvision.models as models
 from saliency_network import saliency_network_resnet18, fov_simple, saliency_network_resnet18_stride1
 from models.model_utils import Resnet, ResnetDilated, MobileNetV2Dilated, C1DeepSup, C1, PPM, PPMDeepsup, UPerNet
-
+from DynamicFocus.utility.torch_tools import gen_grid_mtx_2xHxW
 BatchNorm2d = SynchronizedBatchNorm2d
 
 def makeGaussian(size, fwhm = 3, center=None):
@@ -190,7 +190,7 @@ class SegmentationModuleBase(nn.Module):
 
     def pixel_acc(self, pred, label):
         _, preds = torch.max(pred, dim=1)
-        valid = (label >= 0).long()
+        valid = (label > 0).long()
         acc_sum = torch.sum(valid * (preds == label).long())
         pixel_sum = torch.sum(valid)
         acc = acc_sum.float() / (pixel_sum.float() + 1e-10)
@@ -399,8 +399,25 @@ class DeformSegmentationModule(SegmentationModuleBase):
         t = time.time()
         ori_size = (x.shape[-2],x.shape[-1])
 
+        x_Bx2 = feed_dict['focus_point']
+        B, _ = x_Bx2.shape
+        HS, WS = self.input_size
+        max_dist = np.sqrt(HS ** 2 + WS ** 2)
+        hidx_B = (x_Bx2[:, 0] * (HS - 1))
+        widx_B = (x_Bx2[:, 1] * (WS - 1))
+        grid_mtx_Bx2xHxW = gen_grid_mtx_2xHxW(HS, WS, device='cuda').unsqueeze(0).repeat(B, 1, 1, 1)
+        dist_BxHxW = torch.sqrt((grid_mtx_Bx2xHxW[:, 0, :, :] - hidx_B[:, None, None]) ** 2 + (grid_mtx_Bx2xHxW[:, 1, :, :] - widx_B[:, None, None]) ** 2)
+        focusmap_Bx1xHxW = (dist_BxHxW / max_dist).unsqueeze(1)**2
+
+        fp_tensor = torch.zeros((B, 1, HS, WS)).to(x)
+        for b in range(B):
+            fp_tensor[b, 0, hidx_B.int().item(), widx_B.int().item()] = 1
+
         # EXPLAIN: compute its lower resolution version Xlr
         x_low = b_imresize(x, self.input_size, interp='bilinear')
+        x_low = torch.cat((x_low, focusmap_Bx1xHxW), dim=1)
+        x_low = torch.cat((x_low, fp_tensor), dim=1)
+
         epoch = self.cfg.TRAIN.global_epoch
         if segSize is None and ((self.cfg.TRAIN.opt_deform_LabelEdge or self.cfg.TRAIN.deform_joint_loss) and epoch <= self.cfg.TRAIN.deform_pretrain):
             min_saliency_len = min(self.input_size)
@@ -634,7 +651,7 @@ class DeformSegmentationModule(SegmentationModuleBase):
             # EXPLAIN: The downsampled image X^ is then fed into the segmentation network to
             # estimate the corresponding segmentation probabilities Pˆ =Sϕ(Xˆ)
             x = self.decoder(self.encoder(x_sampled, return_feature_maps=True), segSize=segSize_temp)
-
+            print(torch.unique(x))
             # EXPLAIN: downsample and upsample label y for calculating the intrinsic upsampling error IoU(Y′,Y)
             if self.cfg.MODEL.uniform_sample == 'BI':
                 y_sampled = nn.Upsample(size=tuple(np.array(self.input_size_net_infer)), mode='bilinear')(y.float().unsqueeze(1)).long().squeeze(1)
